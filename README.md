@@ -6,11 +6,11 @@
 Without further ado (for further ado, see below), here is the help string for the main code, the STAR algorithm:
 
 ```
-./star.py -h
-usage: star.py [-h] [-i INPUT] [-e ENDING] [-d DELIMITER] [-o OUTPUT]
-               [-k KERNEL] [-r REFLECTION] [-b BVALUE] [-g GEVAL]
-               [-l LOOKBACK] [-w WEIGHTING] [-wmin WMIN] [-wmax WMAX] [-nw NW]
-               [-s SAVESPEC] [-norm NORM]
+star -h
+usage: star [-h] [-i INPUT] [-e ENDING] [-d DELIMITER] [-o OUTPUT]
+            [-k KERNEL] [-r REFLECTION] [-b BVALUE] [-g GEVAL]
+            [-l LOOKBACK] [-w WEIGHTING] [-wmin WMIN] [-wmax WMAX] [-nw NW]
+            [-s SAVESPEC] [-norm NORM]
 
 Runs the Shocklet Transform And Ranking (STAR) algorithm on data
 
@@ -77,14 +77,14 @@ optional arguments:
                                     with intertemporal zero mean and unit variance. Default is False.
 ```
 
-A key point: *any additional arguments passed to `./star.py` after the named arguments above are interpreted as arguments to be passed to the kernel function*. So, if you're using the default settings and run something like `./star.py -i ./_test/ -e csv`, you'll get an error that says
+A key point: *any additional arguments passed to `star` after the named arguments above are interpreted as arguments to be passed to the kernel function*. So, if you're using the default settings and run something like `star -i ./_test/ -e csv`, you'll get an error that says
 
 ```
 Error occurred in computation of shocklet transform of test
 Error: power_cusp() missing 1 required positional argument: 'b'
 ```
 
-This is expected behavior: you have to pass this argument in at the end, so instead you'd enter `./star.py -i ./_test/ -e csv 3` and everything would be fine.
+This is expected behavior: you have to pass this argument in at the end, so instead you'd enter `star -i ./_test/ -e csv 3` and everything would be fine.
 
 # More technical details
 
@@ -117,7 +117,7 @@ plt.xlim(0, 5000 - 1);
 ```
 
 
-![png](./_example/output_2_0.png)
+![png](./example/output_2_0.png)
 
 
 At its core, the DST is just simple cross-correlation of a kernel function $`\mathcal{K}`$ with a signal such as $`x_n`$. A windowing parameter $W$ controls up- and down-sampling time so that anomalous dynamics can be found at all relevant timescales. 
@@ -152,7 +152,7 @@ plt.tight_layout()
 ```
 
 
-![png](./_example/output_4_0.png)
+![png](./example/output_4_0.png)
 
 
 Lighter colors indicate large positive values while darker colors indicate large negative values. We see that the immediate output of the DST captures pieces of the time series that sort of "look" like the kernel, which in this case is an upside-down spike-y kind of thing (`cusplets.power_cusp` reflected over the horizontal axis).
@@ -199,7 +199,7 @@ ax2.set_ylabel('$C(n)$')
 ax.set_title('Figure 2', fontsize=15)
 ```
 
-![png](./_example/output_7_1.png)
+![png](./example/output_7_1.png)
 
 
 We'll work from the bottom up. The blue curve in the bottom panel displays the cusp indicator function, which (usually, unless you specified any custom weightings of the discrete shocklet transform) is roughly equivalent to 
