@@ -124,3 +124,119 @@ def row_unnormalize(X, means, stds):
         X[row] += means[row]
 
     return X
+
+
+def zero_norm(arr):
+    """Normalizes an array so that it sums to zero
+
+    Args:
+      arr(iterable): the array
+
+    Returns:
+      : numpy.ndarray -- the zero-normalized array
+
+    """
+    arr = 2 * (arr - min(arr)) / (max(arr) - min(arr)) - 1
+    return arr - np.sum(arr) / len(arr)
+
+
+def normalize(arr, stats=False):
+    """Normalizes an array to have zero mean and unit variance
+
+    Args:
+      arr(iterable): the array
+      stats(bool, optional): if stats is True, will also return mean and std of array (Default value = False)
+
+    Returns:
+      : numpy.ndarray -- normalized array; or, if stats is True, tuple -- (normalized array, mean, std)
+
+    """
+    arr = np.array(arr)
+    mean = arr.mean()
+    std = arr.std()
+    normed = (arr - mean) / std
+    if not stats:
+        return normed
+    return normed, mean, std
+
+
+def renormalize(arr, mean, std):
+    arr = np.array(arr)
+    return (arr - mean) / std
+
+
+def max_change(arr):
+    """Calculates the difference between the max and min points in an array.
+
+    Args:
+      arr(arr: a list or numpy.ndarray): a time series
+      arr:
+
+    Returns:
+      : float -- maximum relative change
+
+    """
+    return np.max(arr) - np.min(arr)
+
+
+def max_rel_change(arr, neg=True):
+    """Calculates the maximum relative changes in an array (log10).
+
+    One possible choice for a weighting function in cusplet transform.
+
+    Args:
+      arr(arr: a list or numpy.ndarray): a time series for a given word
+      neg: if true) arr - np.min(arr) + 1 (Default value = True)
+      arr:
+
+    Returns:
+      : float -- maximum relative change (log10)
+
+    """
+    if neg:
+        arr = arr - np.min(arr) + 1
+
+    logret = np.diff(np.log10(arr))
+    return np.max(logret) - np.min(logret)
+
+
+def top_k(indices, words, k):
+    """Find the top k words by the weighted cusp indicator function
+
+    Args:
+      indices(list or numpy.array): a list of indicator values
+      words(list or numpy.array): a list of strings
+      k(int > 0): number of indices to look up.
+
+    Returns:
+      : list -- length k list of (word, indicator value) tuples
+
+    """
+    inds = np.argpartition(indices, -k)[-k:]
+    topkwords = words[inds]
+    topkvals = indices[inds]
+    top = [(word, val) for word, val in zip(topkwords, topkvals)]
+    top = sorted(top, key=lambda t: t[1], reverse=True)
+    return top
+
+
+def window_argmaxes(windows, data):
+    """Find argmax point in data within each window.
+
+    Args:
+      windows(a 2D list or 2D numpy.ndarray): a list of indices indicating targeted windows in the data array
+      data(ata: a list or numpy.ndarray): a list of data points
+      data:
+
+    Returns:
+      : numpy.array -- max points for each window.
+
+    """
+    data = np.array(data)
+    argmaxes = []
+
+    for window in windows:
+        data_segment = data[window]
+        argmaxes.append(window[np.argmax(data_segment)])
+
+    return np.array(argmaxes)

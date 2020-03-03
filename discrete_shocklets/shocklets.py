@@ -1,161 +1,7 @@
 import numpy as np
 from scipy import signal
 
-
-def zero_norm(arr):
-    """Normalizes an array so that it sums to zero
-
-    Args:
-      arr(iterable): the array
-
-    Returns:
-      : numpy.ndarray -- the zero-normalized array
-
-    """
-    arr = 2 * (arr - min(arr)) / (max(arr) - min(arr)) - 1
-    return arr - np.sum(arr) / len(arr)
-
-
-def normalize(arr, stats=False):
-    """Normalizes an array to have zero mean and unit variance
-
-    Args:
-      arr(iterable): the array
-      stats(bool, optional): if stats is True, will also return mean and std of array (Default value = False)
-
-    Returns:
-      : numpy.ndarray -- normalized array; or, if stats is True, tuple -- (normalized array, mean, std)
-
-    """
-    arr = np.array(arr)
-    mean = arr.mean()
-    std = arr.std()
-    normed = (arr - mean) / std
-    if not stats:
-        return normed
-    return normed, mean, std
-
-
-def renormalize(arr, mean, std):
-    arr = np.array(arr)
-    return (arr - mean) / std
-
-
-def haar(L, zn=True):
-    res = -1 * np.ones(L)
-    res[len(res) // 2:] = 1
-    if zn:
-        return zero_norm(res)
-    return res
-
-
-def power_law_zero_cusp(L, b, zn=True, startpt=1, endpt=4):
-    x = np.linspace(startpt, endpt, L)
-    res = x ** (-b)
-    res[:len(res) // 2] = 0
-    if zn:
-        return zero_norm(res)
-    return res
-
-
-def power_law_cusp(L, b, zn=True, startpt=1, endpt=4):
-    res = power_law_zero_cusp(
-        L,
-        b,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt
-    ) + power_law_zero_cusp(
-        L,
-        b,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt
-    )[::-1]
-    if zn:
-        return zero_norm(res)
-    return res
-
-
-def power_cusp(L, b, zn=True, startpt=1, endpt=4):
-    res = power_zero_cusp(
-        L,
-        b,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt,
-    ) + power_zero_cusp(
-        L,
-        b,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt,
-    )[::-1]
-    if zn:
-        return zero_norm(res)
-    return res
-
-
-def pitchfork(L, b, zn=True, startpt=1, endpt=4):
-    res = power_zero_cusp(
-        L,
-        2 * b,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt,
-    )[::-1] + power_cusp(
-        L,
-        b,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt
-    ) + power_zero_cusp(
-        L,
-        2 * b,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt,
-    )
-    if zn:
-        return zero_norm(res)
-    return res
-
-
-def power_zero_cusp(L, b, zn=True, startpt=1, endpt=4):
-    x = np.linspace(startpt, endpt, L)
-    res = x ** b
-    res[len(res) // 2:] = 0
-    if zn:
-        return zero_norm(res)
-    return res
-
-
-def exp_cusp(L, a, zn=True, startpt=1, endpt=4):
-    res = exp_zero_cusp(
-        L,
-        a,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt,
-    ) + exp_zero_cusp(
-        L,
-        a,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt,
-    )[::-1]
-    if zn:
-        return zero_norm(res)
-    return res
-
-
-def exp_zero_cusp(L, a, zn=True, startpt=1, endpt=4):
-    x = np.linspace(startpt, endpt, L)
-    res = np.exp(a * x)
-    res[len(res) // 2:] = 0
-    if zn:
-        return zero_norm(res)
-    return res
+from discrete_shocklets.utils import zero_norm
 
 
 def cusplet(arr, kernel, widths, k_args=None, reflection=0, width_weights=None, method='fft'):
@@ -251,7 +97,7 @@ def classify_cusps(cc, b=1, geval=False):
     Args:
       cc(numpy.ndarray): numpy array of shape (L, n), the cusplet transform of a time series
       b(int or float, optional): multiplier of the standard deviation. (Default value = 1)
-      geval(float >= 0, optional): optional. If geval is an int or float, classify_cusps will return (in addition to the cusps and cusp intensity function) an array of points where the cusp intensity function is greater than geval. (Default value = False)
+      geval(float >= 0, optional): If geval is an int or float, classify_cusps will return (in addition to the cusps and cusp intensity function) an array of points where the cusp intensity function is greater than geval. (Default value = False)
 
     Returns:
       : tuple --- (numpy.ndarray of indices of the cusps; numpy.ndarray representing the cusp intensity function) or, if geval is not False, (extrema; the cusp intensity function; array of points where the cusp intensity function is greater than geval)
@@ -266,9 +112,9 @@ def classify_cusps(cc, b=1, geval=False):
 
     if geval is False:
         return extrema, sum_cc
-
-    gez = np.where(sum_cc > geval)
-    return extrema, sum_cc, gez
+    else:
+        gez = np.where(sum_cc > geval)
+        return extrema, sum_cc, gez
 
 
 def _make_components(indicator, cusp_points=None):
@@ -375,105 +221,6 @@ def make_components(indicator, cusp_points=None, scan_back=0):
     return windows_, estimated_cusp_points
 
 
-def window_argmaxes(windows, data):
-    """Find argmax point in data within each window.
-
-    Args:
-      windows(a 2D list or 2D numpy.ndarray): a list of indices indicating targeted windows in the data array
-      data(ata: a list or numpy.ndarray): a list of data points
-      data: 
-
-    Returns:
-      : numpy.array -- max points for each window.
-
-    """
-    data = np.array(data)
-    argmaxes = []
-
-    for window in windows:
-        data_segment = data[window]
-        argmaxes.append(window[np.argmax(data_segment)])
-
-    return np.array(argmaxes)
-
-
-def max_change(arr):
-    """Calculates the difference between the max and min points in an array.
-
-    Args:
-      arr(arr: a list or numpy.ndarray): a time series
-      arr: 
-
-    Returns:
-      : float -- maximum relative change
-
-    """
-    return np.max(arr) - np.min(arr)
-
-
-def max_rel_change(arr, neg=True):
-    """Calculates the maximum relative changes in an array (log10).
-    
-    One possible choice for a weighting function in cusplet transform.
-
-    Args:
-      arr(arr: a list or numpy.ndarray): a time series for a given word
-      neg: if true) arr - np.min(arr) + 1 (Default value = True)
-      arr: 
-
-    Returns:
-      : float -- maximum relative change (log10)
-
-    """
-    if neg:
-        arr = arr - np.min(arr) + 1
-
-    logret = np.diff(np.log10(arr))
-    return np.max(logret) - np.min(logret)
-
-
-def top_k(indices, words, k):
-    """Find the top k words by the weighted cusp indicator function
-
-    Args:
-      indices(list or numpy.array): a list of indicator values
-      words(list or numpy.array): a list of strings
-      k(int > 0): number of indices to look up.
-
-    Returns:
-      : list -- length k list of (word, indicator value) tuples
-
-    """
-    inds = np.argpartition(indices, -k)[-k:]
-    topkwords = words[inds]
-    topkvals = indices[inds]
-    top = [(word, val) for word, val in zip(topkwords, topkvals)]
-    top = sorted(top, key=lambda t: t[1], reverse=True)
-    return top
-
-
-def _sliding_windows(a, N):
-    """Generates band numpy array *quickly*
-    Taken from https://stackoverflow.com/questions/52463972/generating-banded-matrices-using-numpy.
-
-    Args:
-      a: 
-      N: 
-
-    Returns:
-
-    """
-    a = np.asarray(a)
-    p = np.zeros(N - 1, dtype=a.dtype)
-    b = np.concatenate((p, a, p))
-    s = b.strides[0]
-    return np.lib.stride_tricks.as_strided(
-        b[N - 1:],
-        shape=(N, len(a) + N - 1),
-        strides=(-s, s),
-    )
-
-
 def setup_corr_mat(k, N):
     """Sets up linear operator corresponding to cross correlation.
     
@@ -490,6 +237,28 @@ def setup_corr_mat(k, N):
       numpy.ndarray -- NxN array, the cross-correlation operator
 
     """
+
+    def _sliding_windows(a, N):
+        """Generates band numpy array *quickly*
+        Taken from https://stackoverflow.com/questions/52463972/generating-banded-matrices-using-numpy.
+
+        Args:
+          a:
+          N:
+
+        Returns:
+
+        """
+        a = np.asarray(a)
+        p = np.zeros(N - 1, dtype=a.dtype)
+        b = np.concatenate((p, a, p))
+        s = b.strides[0]
+        return np.lib.stride_tricks.as_strided(
+            b[N - 1:],
+            shape=(N, len(a) + N - 1),
+            strides=(-s, s),
+        )
+
     full_corr_mat = _sliding_windows(k, N)
     overhang = full_corr_mat.shape[-1] - N
     if overhang % 2 == 1:
