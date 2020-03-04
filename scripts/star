@@ -8,7 +8,7 @@ import pathlib
 import numpy as np
 
 import discrete_shocklets.utils
-from discrete_shocklets import shocklets
+from discrete_shocklets import shocklets, kernel_functions, weighting_functions
 
 
 def parse_args():
@@ -19,14 +19,14 @@ def parse_args():
     parser.add_argument(
         '-i',
         '--input',
-        type=str,
+        type=validate_input_dir,
         help='Path to files on which to run the algorithm. '
              'The files should be in row-major order. '
              'That is, they should be a N_variable x T matrix, where T is the number of timesteps. '
              'This algorithm multiprocesses over files so if your time series are very long it could '
              'be significantly faster to break them up into multiple files, one time series per file. '
              '(This is true only if you have many cores on which processing can occur in parallel.)',
-        default='.',
+        default=pathlib.Path(),
     )
     parser.add_argument(
         '-e',
@@ -45,23 +45,27 @@ def parse_args():
     parser.add_argument(
         '-o',
         '--output',
-        type=str,
+        type=validate_output_dir,
         help='Path to which to save output',
-        default='../out',
+        default=pathlib.Path('../out'),
     )
     parser.add_argument(
         '-k',
         '--kernel',
-        type=str,
-        help='Kernel function to use. '
-             'Must be in dir(shocklets). '
-             'Pre-written options (no need to write code) are: '
-             'haar, which is the Haar wavelet and looks for pure level changes; '
-             'power_zero_cusp, which is the building block for other cusp kernels and looks for power (monomial) growth followed by an abrupt drop to constant low levels; '
-             'power_cusp, which is a power cusp shape; exp_zero_cusp, which is like power_zero_cusp except with exponential growth; '
+        type=lambda x: getattr(kernel_functions, x),
+        help='Kernel function used by STAR to identify interesting regimes. '
+             'Most common options are: '
+             'haar, the Haar wavelet, which looks for pure level changes; '
+             'power_zero_cusp, which is the building block for other cusp kernels and looks for power '
+             '(monomial) growth followed by an abrupt drop to constant low levels; '
+             'power_cusp, which is a power cusp shape; '
+             'exp_zero_cusp, which is like power_zero_cusp except with exponential growth; '
              'and exp_cusp, which is like power_cusp except with exponential growth. '
-             'Combining these kernels with a reflection (see the -r option) is probably enough to look for most interesting behavior. ',
-        default='power_cusp',
+             'Combining these kernels with a reflection (see the -r option) '
+             'is probably enough to look for most interesting behavior. '
+             'See kernel_functions.py for additional options and details.',
+        default=kernel_functions.power_cusp,
+        choices={k.__name__ for k in kernel_functions.registered_kernel_functions}
     )
     parser.add_argument(
         '-r',
@@ -94,12 +98,12 @@ def parse_args():
     parser.add_argument(
         '-w',
         '--weighting',
-        type=str,
+        type=lambda x: getattr(weighting_functions, x),
         help='Method for weighting of cusp indicator functions. '
              'max_change uses the dynamic range of the original series within each window. '
              'max_rel_change computes max_change on the array of log returns of the original time series.',
-        default='max_change',
-        choices={'max_change', 'max_rel_change'},
+        default=weighting_functions.max_change,
+        choices={x.__name__ for x in weighting_functions.registered_weighting_functions},
     )
     parser.add_argument(
         '-wmin',
@@ -125,7 +129,7 @@ def parse_args():
     parser.add_argument(
         '-s',
         '--savespec',
-        type=str,
+        type=lambda x: x.strip().lower(),
         help='Spec for saving. Options are: '
              'cc, to save cusplet transform; '
              'indic, to save indicator function;'
@@ -134,17 +138,31 @@ def parse_args():
              'all, to save everything. '
              'Files are saved in the numpy compressed archive format (.npz files).',
         default='all',
+        choices={'cc', 'indic', 'windows', 'weighted', 'all'},
     )
     parser.add_argument(
         '-norm',
         '--norm',
-        type=bool,
+        type=lambda x: x.lower() in {'t', 'true', '1'},
         help='Whether or not to normalize series to be wide-sense stationary '
              'with intertemporal zero mean and unit variance.',
         default=False,
     )
 
     return parser.parse_known_args()
+
+
+def validate_input_dir(path):
+    input_dir = pathlib.Path(path)
+    if not input_dir.is_dir():
+        FileNotFoundError(f'{path} does not exist or is not a directory')
+    return input_dir
+
+
+def validate_output_dir(path):
+    output_dir = pathlib.Path(path)
+    output_dir.mkdir(exist_ok=True, parents=True)
+    return output_dir
 
 
 def _process(
@@ -176,8 +194,6 @@ def _process(
         nt = data.shape[1]
         wmax = min(500, int(0.5 * nt))
 
-    kernel = getattr(shocklets, kernel)
-    weighting = getattr(shocklets, weighting)
     widths = np.linspace(wmin, wmax, nw).astype(int)
 
     for i, row in enumerate(data):
@@ -272,10 +288,6 @@ def _mp_process(fname, args, kernel_args):
 def main():
     args, kernel_args = parse_args()
 
-    input_dir = pathlib.Path(args.input)
-    if not input_dir.is_dir():
-        FileNotFoundError(f'{args.input} does not exist or is not a directory')
-
     try:
         kernel_args_ = []
         for i, arg in enumerate(kernel_args):
@@ -291,9 +303,7 @@ def main():
     if args.wmin >= args.wmax:
         ValueError(f'wmin ({args.wmin}) must be less than wmax ({args.wmax}).')
 
-    pathlib.Path(args.output).mkdir(exist_ok=True, parents=True)
-
-    fnames = sorted(input_dir.glob(f'*.{args.ending}'))
+    fnames = sorted(args.input.glob(f'*.{args.ending}'))
     if len(fnames) == 0:
         FileNotFoundError(f'There are no files with ending {args.ending} in {args.input}')
 

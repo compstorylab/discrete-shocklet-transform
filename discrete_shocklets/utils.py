@@ -165,41 +165,6 @@ def renormalize(arr, mean, std):
     return (arr - mean) / std
 
 
-def max_change(arr):
-    """Calculates the difference between the max and min points in an array.
-
-    Args:
-      arr(arr: a list or numpy.ndarray): a time series
-      arr:
-
-    Returns:
-      : float -- maximum relative change
-
-    """
-    return np.max(arr) - np.min(arr)
-
-
-def max_rel_change(arr, neg=True):
-    """Calculates the maximum relative changes in an array (log10).
-
-    One possible choice for a weighting function in cusplet transform.
-
-    Args:
-      arr(arr: a list or numpy.ndarray): a time series for a given word
-      neg: if true) arr - np.min(arr) + 1 (Default value = True)
-      arr:
-
-    Returns:
-      : float -- maximum relative change (log10)
-
-    """
-    if neg:
-        arr = arr - np.min(arr) + 1
-
-    logret = np.diff(np.log10(arr))
-    return np.max(logret) - np.min(logret)
-
-
 def top_k(indices, words, k):
     """Find the top k words by the weighted cusp indicator function
 
