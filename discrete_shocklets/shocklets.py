@@ -1,92 +1,101 @@
 import numpy as np
 from scipy import signal
 
-from discrete_shocklets.utils import zero_norm
+from . import kernel_functions
+from . import utils
 
 
-def cusplet(arr, kernel, widths, k_args=None, reflection=0, width_weights=None, method='fft'):
+def cusplet(
+        arr,
+        widths,
+        kernel_args=None,
+        kernel_func=kernel_functions.power_cusp,
+        method='fft',
+        reflection=0,
+        width_weights=None,
+):
     """Implements the discrete cusplet transform.
 
     Args:
-      arr(list): array of shape (n,) or (n,1). This array should not contain inf-like values. The transform will still be computed but infs propagate. Nan-like values will be linearly interpolated, which is okay for subsequent time-based analysis but will introduce ringing in frequency-based analyses.
-      kernel(callable): kernel function. Must take an integer L > 0 as an argument and any number of additional, nonkeyword arguments, and returns a numpy array of shape (L,) that implements the kernel. The returned array should sum to zero; use the zero_norm function for this.
-      widths(iterable): iterable of integers that specify the window widths (L above). Assumed to be in increasing order; if widths is not in increasing order the results will be garbage.
-      k_args(list or tuple, optional): arguments for the kernel function. (Default value = None)
-      reflection(int, optional): integer n evaluates to n %4, element of the reflection group that left-multiplies the kernel function. Default is 0 (identity element).
-      width_weights: type width_weights: (Default value = None)
-      method(str`, optional): one of 'direct' or 'fft' (Default value = 'fft')
+        arr(list): array of shape (n,) or (n,1).
+            This array should not contain inf-like values.
+            The transform will still be computed but infs propagate.
+            Nan-like values will be linearly interpolated, which is okay for subsequent
+            time-based analysis but will introduce ringing in frequency-based analyses.
+        widths(iterable): iterable of integers that specify the window widths (L above).
+            Assumed to be in increasing order.
+            If widths is not in increasing order the results will be garbage.
+        kernel_args(list or tuple, optional): arguments for the kernel function.
+        kernel_func(callable): A kernel factory function.
+            See kernel_functions.py for the required interface and available options.
+        method(str, optional): one of 'direct' or 'fft' (Default value = 'fft')
+        reflection(int, optional): Element of the reflection group applied to the kernel function.
+            Default is 0, corresponding to the identity element.
+        width_weights(list or None, optional): Relative importance of the different window widths.
 
     Returns:
       : tuple -- (numpy array of shape (L, n) -- the cusplet transform, k -- the calculated kernel function)
 
     """
-    if k_args is None:
-        k_args = []
-
-    arr = np.array(arr)
-    cc = np.zeros((len(widths), len(arr)))
-
-    # we need to fill all nans
-    # best choice for this is linear interpolation
-
-    nans = np.isnan(arr)
-    nonzero_fn = lambda x: x.nonzero()[0]
-
-    arr[nans] = np.interp(nonzero_fn(nans),
-                          nonzero_fn(~nans),
-                          arr[~nans])
-
-    # allow for weighting of width importance
+    if kernel_args is None:
+        kernel_args = []
     if width_weights is None:
         width_weights = np.ones_like(widths)
+    else:
+        width_weights = np.array(width_weights)
 
-    # now we will see what group action to operate with
-    for i, w in enumerate(widths):
-        k = kernel(w, *k_args)
-        # implement reflections
-        reflection = reflection % 4
-        if reflection == 1:
-            k = k[::-1]
-        elif reflection == 2:
-            k = -k
-        elif reflection == 3:
-            k = -k[::-1]
+    arr = utils.fill_na(np.array(arr), mode='interpolate')
+    cc = np.zeros((len(widths), len(arr)))
 
-        cc[i] = width_weights[i] * signal.correlate(arr, k, mode='same', method=method)
-    return cc, k
+    for i, width in enumerate(widths):
+        kernel = kernel_func(width, *kernel_args)
+        kernel = utils.apply_reflection_action(kernel, reflection)
+        cc[i] = signal.correlate(arr, kernel, mode='same', method=method)
+    cc = width_weights[..., np.newaxis] * cc
+    return cc, kernel
 
 
-def cusplet_parameter_sweep(arr, kernel, widths, k_args, reflection=0, width_weights=None, k_weights=None):
+def cusplet_parameter_sweep(
+        arr,
+        widths,
+        kernel_weights=None,
+        kernel_args=None,
+        kernel_func=kernel_functions.power_cusp,
+        reflection=0,
+        width_weights=None,
+):
     """Sweeps over values of parameters (kernel arguments) in the discrete cusplet transform.
 
     Args:
       arr(list): numpy array of shape (n,) or (n,1), time series
-      kernel(callable): kernel function. Must take an integer L > 0 as an argument and any number of additional, nonkeyword arguments, and returns a numpy array of shape (L,) that implements the kernel. The returned array should sum to zero; use the zero_norm function for this.
+      kernel_func(callable): kernel function. Must take an integer L > 0 as an argument and any number of additional, nonkeyword arguments, and returns a numpy array of shape (L,) that implements the kernel. The returned array should sum to zero; use the zero_norm function for this.
       widths(iterable): iterable of integers that specify the window widths (L above). Assumed to be in increasing order; if widths is not in increasing order the results will be garbage.
-      k_args(list or tuple of lists or tuples): iterable of iterables of arguments for the kernel function. Each top-level iterable is treated as a single parameter vector.
+      kernel_args(list or tuple of lists or tuples): iterable of iterables of arguments for the kernel function. Each top-level iterable is treated as a single parameter vector.
       reflection(int, optional): integer n evaluates to n %4, element of the reflection group that left-multiplies the kernel function. Default is 0 (identity element).
-      width_weights: type width_weights: (Default value = None)
-      k_weights: type k_weights: (Default value = None)
+      width_weights (list or None, optional):
+      kernel_weights(list or None, optional):
 
     Returns:
       : numpy.ndarray -- numpy array of shape (L, n, len(k_args)), the cusplet transform
 
     """
-    k_args = np.array(k_args)
+    kernel_args = np.array(kernel_args)
 
-    if k_weights is None:
-        k_weights = np.ones(k_args.shape[0])
+    if kernel_weights is None:
+        kernel_weights = np.ones(kernel_args.shape[0])
 
-    cc = np.zeros((len(widths), len(arr), len(k_args)))
+    cc = np.zeros((len(widths), len(arr), len(kernel_args)))
 
-    for i, k_arg in enumerate(k_args):
-        cres, _ = cusplet(arr,
-                          kernel,
-                          widths,
-                          k_args=k_arg,
-                          reflection=reflection,
-                          width_weights=width_weights)
-        cc[:, :, i] = cres * k_weights[i]
+    for i, k_arg in enumerate(kernel_args):
+        cres, _ = cusplet(
+            arr,
+            widths,
+            kernel_args=k_arg,
+            kernel_func=kernel_func,
+            reflection=reflection,
+            width_weights=width_weights,
+        )
+        cc[:, :, i] = cres * kernel_weights[i]
 
     return cc
 
@@ -103,7 +112,7 @@ def classify_cusps(cc, b=1, geval=False):
       : tuple --- (numpy.ndarray of indices of the cusps; numpy.ndarray representing the cusp intensity function) or, if geval is not False, (extrema; the cusp intensity function; array of points where the cusp intensity function is greater than geval)
 
     """
-    sum_cc = zero_norm(np.nansum(cc, axis=0))
+    sum_cc = utils.zero_norm(np.nansum(cc, axis=0))
     mu_cc = np.nanmean(sum_cc)
     std_cc = np.nanstd(sum_cc)
 
@@ -299,35 +308,15 @@ def matrix_cusplet(
     """
     if k_args is None:
         k_args = []
-
-    arr = np.array(arr)
-    cc = np.zeros((len(widths), len(arr)))
-
-    # we need to fill all nans
-    # best choice for this is linear interpolation
-
-    nans = np.isnan(arr)
-    nonzero_fn = lambda x: x.nonzero()[0]
-
-    arr[nans] = np.interp(nonzero_fn(nans),
-                          nonzero_fn(~nans),
-                          arr[~nans])
-
-    # allow for weighting of width importance
     if width_weights is None:
         width_weights = np.ones_like(widths)
 
-    # now we will see what group action to operate with
+    arr = utils.fill_na(np.array(arr))
+    cc = np.zeros((len(widths), len(arr)))
+
     for i, w in enumerate(widths):
         k = kernel(w, *k_args)
-        # implement reflections
-        reflection = reflection % 4
-        if reflection == 1:
-            k = k[::-1]
-        elif reflection == 2:
-            k = -k
-        elif reflection == 3:
-            k = -k[::-1]
+        k = utils.apply_reflection_action(k, reflection)
 
         # now set up the cross correlation
         corr_mat = setup_corr_mat(k, arr.shape[0])

@@ -161,6 +161,30 @@ def renormalize(arr, mean, std):
     return (arr - mean) / std
 
 
+def fill_na(array, mode='interpolate'):
+    if mode == 'interpolate':
+        nans = np.isnan(array)
+        array[nans] = np.interp(
+            nans.nonzero()[0],
+            (~nans).nonzero()[0],
+            array[~nans],
+        )
+    else:
+        raise ValueError(f'mode = {mode} is not supported. Supported modes are {{interpolate}}.')
+    return array
+
+
+def apply_reflection_action(array, reflection):
+    reflection = reflection % 4
+    if reflection == 1:
+        array = array[::-1]
+    elif reflection == 2:
+        array = -array
+    elif reflection == 3:
+        array = -array[::-1]
+    return array
+
+
 def top_k(indices, words, k):
     """Find the top k words by the weighted cusp indicator function
 

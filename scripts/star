@@ -22,8 +22,8 @@ def parse_args():
         type=validate_input_dir,
         help='Path to files on which to run the algorithm. '
              'The files should be in row-major order. '
-             'That is, they should be a N_variable x T matrix, where T is the number of timesteps. '
-             'This algorithm multiprocesses over files so if your time series are very long it could '
+             'That is, they should be a N_variable x T matrix, where T is the number of time steps. '
+             'This algorithm multi-processes over files so if your time series are very long it could '
              'be significantly faster to break them up into multiple files, one time series per file. '
              '(This is true only if you have many cores on which processing can occur in parallel.)',
         default=pathlib.Path(),
@@ -145,7 +145,7 @@ def parse_args():
         '--norm',
         type=lambda x: x.lower() in {'t', 'true', '1'},
         help='Whether or not to normalize series to be wide-sense stationary '
-             'with intertemporal zero mean and unit variance.',
+             'with inter-temporal zero mean and unit variance.',
         default=False,
     )
 
@@ -200,13 +200,7 @@ def _process(
         if norm:
             row = discrete_shocklets.utils.normalize(row)
         try:
-            cc, _ = shocklets.cusplet(
-                row,
-                kernel,
-                widths,
-                k_args=kernel_args,
-                reflection=reflection
-            )
+            cc, _ = shocklets.cusplet(row, kernel, widths, kernel_args=kernel_args, reflection=reflection)
         except Exception as e:
             print(f'Error occurred in computation of shocklet transform of {orig_fname}')
             print(f'Error: {e}')
