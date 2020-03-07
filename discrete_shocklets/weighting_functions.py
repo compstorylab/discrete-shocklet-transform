@@ -1,11 +1,20 @@
+"""
+API for weighting functions:
+    `function(arr, *args, **kwargs)`
+        arr: array to weight, intended to be a shocklet indicator function
+        *args: any additional arguments to pass
+        **kwargs: any additional keyword arguments to pass
+"""
+
+
 import numpy as np
 
 registered_weighting_functions = []
 
 
-def register_weighting_function(kernel_function):
-    registered_weighting_functions.append(kernel_function)
-    return kernel_function
+def register_weighting_function(weighting_function):
+    registered_weighting_functions.append(weighting_function)
+    return weighting_function
 
 
 @register_weighting_function

@@ -1,7 +1,7 @@
 """
 API for kernel functions:
     `function(W, *args, zn=True)`
-        W: Window size (in)
+        W: Window size (int)
         *args: Additional positional arguments to the function as parameters (must be cast-able to float)
         zn: Boolean that indicates if the kernel function integrates to zero (default is True).
 """

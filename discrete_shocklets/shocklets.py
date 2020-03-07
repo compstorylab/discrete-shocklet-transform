@@ -14,7 +14,7 @@ def cusplet(
         reflection=0,
         width_weights=None,
 ):
-    """Implements the discrete cusplet transform.
+    """Implements the discrete shocklet transform.
 
     Args:
         arr(list): array of shape (n,) or (n,1).
