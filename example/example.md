@@ -36,18 +36,13 @@ Let's see what the immediate output of the DST looks like. We will use a kernel 
 
 
 ```python
+import discrete_shocklets.kernel_functions
 windows = np.linspace(10, 1000, 100)  # 100 windows, equally spaced from width 10 to 1000
-kernel = cusplets.power_cusp  # a symmetric power-law type cusp
+kernel = discrete_shocklets.kernel_functions.power_cusp  # a symmetric power-law type cusp
 k_args = [3.]  # arguments for the kernel; in this case, it's the parameter $\theta = 3$.
 reflection = 2  # reflect the kernel over the horizontal axis
 
-dst, largest_kernel = cusplets.cusplet(
-    x,
-    kernel,
-    windows,
-    k_args=k_args,
-    reflection=reflection
-)
+dst, largest_kernel = cusplets.cusplet(x,kernel,windows,kernel_args=k_args,reflection=reflection)
 
 fig, axes = plt.subplots(2, 1, figsize=(6, 6))
 ax0, ax1 = axes

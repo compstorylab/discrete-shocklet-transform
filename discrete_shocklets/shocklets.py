@@ -1,246 +1,101 @@
 import numpy as np
 from scipy import signal
 
-
-def zero_norm(arr):
-    """Normalizes an array so that it sums to zero
-
-    Args:
-      arr(iterable): the array
-
-    Returns:
-      : numpy.ndarray -- the zero-normalized array
-
-    """
-    arr = 2 * (arr - min(arr)) / (max(arr) - min(arr)) - 1
-    return arr - np.sum(arr) / len(arr)
+from . import kernel_functions
+from . import utils
 
 
-def normalize(arr, stats=False):
-    """Normalizes an array to have zero mean and unit variance
-
-    Args:
-      arr(iterable): the array
-      stats(bool, optional): if stats is True, will also return mean and std of array (Default value = False)
-
-    Returns:
-      : numpy.ndarray -- normalized array; or, if stats is True, tuple -- (normalized array, mean, std)
-
-    """
-    arr = np.array(arr)
-    mean = arr.mean()
-    std = arr.std()
-    normed = (arr - mean) / std
-    if not stats:
-        return normed
-    return normed, mean, std
-
-
-def renormalize(arr, mean, std):
-    arr = np.array(arr)
-    return (arr - mean) / std
-
-
-def haar(L, zn=True):
-    res = -1 * np.ones(L)
-    res[len(res) // 2:] = 1
-    if zn:
-        return zero_norm(res)
-    return res
-
-
-def power_law_zero_cusp(L, b, zn=True, startpt=1, endpt=4):
-    x = np.linspace(startpt, endpt, L)
-    res = x ** (-b)
-    res[:len(res) // 2] = 0
-    if zn:
-        return zero_norm(res)
-    return res
-
-
-def power_law_cusp(L, b, zn=True, startpt=1, endpt=4):
-    res = power_law_zero_cusp(
-        L,
-        b,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt
-    ) + power_law_zero_cusp(
-        L,
-        b,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt
-    )[::-1]
-    if zn:
-        return zero_norm(res)
-    return res
-
-
-def power_cusp(L, b, zn=True, startpt=1, endpt=4):
-    res = power_zero_cusp(
-        L,
-        b,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt,
-    ) + power_zero_cusp(
-        L,
-        b,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt,
-    )[::-1]
-    if zn:
-        return zero_norm(res)
-    return res
-
-
-def pitchfork(L, b, zn=True, startpt=1, endpt=4):
-    res = power_zero_cusp(
-        L,
-        2 * b,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt,
-    )[::-1] + power_cusp(
-        L,
-        b,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt
-    ) + power_zero_cusp(
-        L,
-        2 * b,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt,
-    )
-    if zn:
-        return zero_norm(res)
-    return res
-
-
-def power_zero_cusp(L, b, zn=True, startpt=1, endpt=4):
-    x = np.linspace(startpt, endpt, L)
-    res = x ** b
-    res[len(res) // 2:] = 0
-    if zn:
-        return zero_norm(res)
-    return res
-
-
-def exp_cusp(L, a, zn=True, startpt=1, endpt=4):
-    res = exp_zero_cusp(
-        L,
-        a,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt,
-    ) + exp_zero_cusp(
-        L,
-        a,
-        zn=zn,
-        startpt=startpt,
-        endpt=endpt,
-    )[::-1]
-    if zn:
-        return zero_norm(res)
-    return res
-
-
-def exp_zero_cusp(L, a, zn=True, startpt=1, endpt=4):
-    x = np.linspace(startpt, endpt, L)
-    res = np.exp(a * x)
-    res[len(res) // 2:] = 0
-    if zn:
-        return zero_norm(res)
-    return res
-
-
-def cusplet(arr, kernel, widths, k_args=None, reflection=0, width_weights=None, method='fft'):
+def cusplet(
+        arr,
+        widths,
+        kernel_args=None,
+        kernel_func=kernel_functions.power_cusp,
+        method='fft',
+        reflection=0,
+        width_weights=None,
+):
     """Implements the discrete cusplet transform.
 
     Args:
-      arr(list): array of shape (n,) or (n,1). This array should not contain inf-like values. The transform will still be computed but infs propagate. Nan-like values will be linearly interpolated, which is okay for subsequent time-based analysis but will introduce ringing in frequency-based analyses.
-      kernel(callable): kernel function. Must take an integer L > 0 as an argument and any number of additional, nonkeyword arguments, and returns a numpy array of shape (L,) that implements the kernel. The returned array should sum to zero; use the zero_norm function for this.
-      widths(iterable): iterable of integers that specify the window widths (L above). Assumed to be in increasing order; if widths is not in increasing order the results will be garbage.
-      k_args(list or tuple, optional): arguments for the kernel function. (Default value = None)
-      reflection(int, optional): integer n evaluates to n %4, element of the reflection group that left-multiplies the kernel function. Default is 0 (identity element).
-      width_weights: type width_weights: (Default value = None)
-      method(str`, optional): one of 'direct' or 'fft' (Default value = 'fft')
+        arr(list): array of shape (n,) or (n,1).
+            This array should not contain inf-like values.
+            The transform will still be computed but infs propagate.
+            Nan-like values will be linearly interpolated, which is okay for subsequent
+            time-based analysis but will introduce ringing in frequency-based analyses.
+        widths(iterable): iterable of integers that specify the window widths (L above).
+            Assumed to be in increasing order.
+            If widths is not in increasing order the results will be garbage.
+        kernel_args(list or tuple, optional): arguments for the kernel function.
+        kernel_func(callable): A kernel factory function.
+            See kernel_functions.py for the required interface and available options.
+        method(str, optional): one of 'direct' or 'fft' (Default value = 'fft')
+        reflection(int, optional): Element of the reflection group applied to the kernel function.
+            Default is 0, corresponding to the identity element.
+        width_weights(list or None, optional): Relative importance of the different window widths.
 
     Returns:
       : tuple -- (numpy array of shape (L, n) -- the cusplet transform, k -- the calculated kernel function)
 
     """
-    if k_args is None:
-        k_args = []
-
-    arr = np.array(arr)
-    cc = np.zeros((len(widths), len(arr)))
-
-    # we need to fill all nans
-    # best choice for this is linear interpolation
-
-    nans = np.isnan(arr)
-    nonzero_fn = lambda x: x.nonzero()[0]
-
-    arr[nans] = np.interp(nonzero_fn(nans),
-                          nonzero_fn(~nans),
-                          arr[~nans])
-
-    # allow for weighting of width importance
+    if kernel_args is None:
+        kernel_args = []
     if width_weights is None:
         width_weights = np.ones_like(widths)
+    else:
+        width_weights = np.array(width_weights)
 
-    # now we will see what group action to operate with
-    for i, w in enumerate(widths):
-        k = kernel(w, *k_args)
-        # implement reflections
-        reflection = reflection % 4
-        if reflection == 1:
-            k = k[::-1]
-        elif reflection == 2:
-            k = -k
-        elif reflection == 3:
-            k = -k[::-1]
+    arr = utils.fill_na(np.array(arr), mode='interpolate')
+    cc = np.zeros((len(widths), len(arr)))
 
-        cc[i] = width_weights[i] * signal.correlate(arr, k, mode='same', method=method)
-    return cc, k
+    for i, width in enumerate(widths):
+        kernel = kernel_func(width, *kernel_args)
+        kernel = utils.apply_reflection_action(kernel, reflection)
+        cc[i] = signal.correlate(arr, kernel, mode='same', method=method)
+    cc = width_weights[..., np.newaxis] * cc
+    return cc, kernel
 
 
-def cusplet_parameter_sweep(arr, kernel, widths, k_args, reflection=0, width_weights=None, k_weights=None):
+def cusplet_parameter_sweep(
+        arr,
+        widths,
+        kernel_weights=None,
+        kernel_args=None,
+        kernel_func=kernel_functions.power_cusp,
+        reflection=0,
+        width_weights=None,
+):
     """Sweeps over values of parameters (kernel arguments) in the discrete cusplet transform.
 
     Args:
       arr(list): numpy array of shape (n,) or (n,1), time series
-      kernel(callable): kernel function. Must take an integer L > 0 as an argument and any number of additional, nonkeyword arguments, and returns a numpy array of shape (L,) that implements the kernel. The returned array should sum to zero; use the zero_norm function for this.
+      kernel_func(callable): kernel function. Must take an integer L > 0 as an argument and any number of additional, nonkeyword arguments, and returns a numpy array of shape (L,) that implements the kernel. The returned array should sum to zero; use the zero_norm function for this.
       widths(iterable): iterable of integers that specify the window widths (L above). Assumed to be in increasing order; if widths is not in increasing order the results will be garbage.
-      k_args(list or tuple of lists or tuples): iterable of iterables of arguments for the kernel function. Each top-level iterable is treated as a single parameter vector.
+      kernel_args(list or tuple of lists or tuples): iterable of iterables of arguments for the kernel function. Each top-level iterable is treated as a single parameter vector.
       reflection(int, optional): integer n evaluates to n %4, element of the reflection group that left-multiplies the kernel function. Default is 0 (identity element).
-      width_weights: type width_weights: (Default value = None)
-      k_weights: type k_weights: (Default value = None)
+      width_weights (list or None, optional):
+      kernel_weights(list or None, optional):
 
     Returns:
       : numpy.ndarray -- numpy array of shape (L, n, len(k_args)), the cusplet transform
 
     """
-    k_args = np.array(k_args)
+    kernel_args = np.array(kernel_args)
 
-    if k_weights is None:
-        k_weights = np.ones(k_args.shape[0])
+    if kernel_weights is None:
+        kernel_weights = np.ones(kernel_args.shape[0])
 
-    cc = np.zeros((len(widths), len(arr), len(k_args)))
+    cc = np.zeros((len(widths), len(arr), len(kernel_args)))
 
-    for i, k_arg in enumerate(k_args):
-        cres, _ = cusplet(arr,
-                          kernel,
-                          widths,
-                          k_args=k_arg,
-                          reflection=reflection,
-                          width_weights=width_weights)
-        cc[:, :, i] = cres * k_weights[i]
+    for i, k_arg in enumerate(kernel_args):
+        cres, _ = cusplet(
+            arr,
+            widths,
+            kernel_args=k_arg,
+            kernel_func=kernel_func,
+            reflection=reflection,
+            width_weights=width_weights,
+        )
+        cc[:, :, i] = cres * kernel_weights[i]
 
     return cc
 
@@ -251,13 +106,13 @@ def classify_cusps(cc, b=1, geval=False):
     Args:
       cc(numpy.ndarray): numpy array of shape (L, n), the cusplet transform of a time series
       b(int or float, optional): multiplier of the standard deviation. (Default value = 1)
-      geval(float >= 0, optional): optional. If geval is an int or float, classify_cusps will return (in addition to the cusps and cusp intensity function) an array of points where the cusp intensity function is greater than geval. (Default value = False)
+      geval(float >= 0, optional): If geval is an int or float, classify_cusps will return (in addition to the cusps and cusp intensity function) an array of points where the cusp intensity function is greater than geval. (Default value = False)
 
     Returns:
       : tuple --- (numpy.ndarray of indices of the cusps; numpy.ndarray representing the cusp intensity function) or, if geval is not False, (extrema; the cusp intensity function; array of points where the cusp intensity function is greater than geval)
 
     """
-    sum_cc = zero_norm(np.nansum(cc, axis=0))
+    sum_cc = utils.zero_norm(np.nansum(cc, axis=0))
     mu_cc = np.nanmean(sum_cc)
     std_cc = np.nanstd(sum_cc)
 
@@ -266,9 +121,9 @@ def classify_cusps(cc, b=1, geval=False):
 
     if geval is False:
         return extrema, sum_cc
-
-    gez = np.where(sum_cc > geval)
-    return extrema, sum_cc, gez
+    else:
+        gez = np.where(sum_cc > geval)
+        return extrema, sum_cc, gez
 
 
 def _make_components(indicator, cusp_points=None):
@@ -375,105 +230,6 @@ def make_components(indicator, cusp_points=None, scan_back=0):
     return windows_, estimated_cusp_points
 
 
-def window_argmaxes(windows, data):
-    """Find argmax point in data within each window.
-
-    Args:
-      windows(a 2D list or 2D numpy.ndarray): a list of indices indicating targeted windows in the data array
-      data(ata: a list or numpy.ndarray): a list of data points
-      data: 
-
-    Returns:
-      : numpy.array -- max points for each window.
-
-    """
-    data = np.array(data)
-    argmaxes = []
-
-    for window in windows:
-        data_segment = data[window]
-        argmaxes.append(window[np.argmax(data_segment)])
-
-    return np.array(argmaxes)
-
-
-def max_change(arr):
-    """Calculates the difference between the max and min points in an array.
-
-    Args:
-      arr(arr: a list or numpy.ndarray): a time series
-      arr: 
-
-    Returns:
-      : float -- maximum relative change
-
-    """
-    return np.max(arr) - np.min(arr)
-
-
-def max_rel_change(arr, neg=True):
-    """Calculates the maximum relative changes in an array (log10).
-    
-    One possible choice for a weighting function in cusplet transform.
-
-    Args:
-      arr(arr: a list or numpy.ndarray): a time series for a given word
-      neg: if true) arr - np.min(arr) + 1 (Default value = True)
-      arr: 
-
-    Returns:
-      : float -- maximum relative change (log10)
-
-    """
-    if neg:
-        arr = arr - np.min(arr) + 1
-
-    logret = np.diff(np.log10(arr))
-    return np.max(logret) - np.min(logret)
-
-
-def top_k(indices, words, k):
-    """Find the top k words by the weighted cusp indicator function
-
-    Args:
-      indices(list or numpy.array): a list of indicator values
-      words(list or numpy.array): a list of strings
-      k(int > 0): number of indices to look up.
-
-    Returns:
-      : list -- length k list of (word, indicator value) tuples
-
-    """
-    inds = np.argpartition(indices, -k)[-k:]
-    topkwords = words[inds]
-    topkvals = indices[inds]
-    top = [(word, val) for word, val in zip(topkwords, topkvals)]
-    top = sorted(top, key=lambda t: t[1], reverse=True)
-    return top
-
-
-def _sliding_windows(a, N):
-    """Generates band numpy array *quickly*
-    Taken from https://stackoverflow.com/questions/52463972/generating-banded-matrices-using-numpy.
-
-    Args:
-      a: 
-      N: 
-
-    Returns:
-
-    """
-    a = np.asarray(a)
-    p = np.zeros(N - 1, dtype=a.dtype)
-    b = np.concatenate((p, a, p))
-    s = b.strides[0]
-    return np.lib.stride_tricks.as_strided(
-        b[N - 1:],
-        shape=(N, len(a) + N - 1),
-        strides=(-s, s),
-    )
-
-
 def setup_corr_mat(k, N):
     """Sets up linear operator corresponding to cross correlation.
     
@@ -490,6 +246,28 @@ def setup_corr_mat(k, N):
       numpy.ndarray -- NxN array, the cross-correlation operator
 
     """
+
+    def _sliding_windows(a, N):
+        """Generates band numpy array *quickly*
+        Taken from https://stackoverflow.com/questions/52463972/generating-banded-matrices-using-numpy.
+
+        Args:
+          a:
+          N:
+
+        Returns:
+
+        """
+        a = np.asarray(a)
+        p = np.zeros(N - 1, dtype=a.dtype)
+        b = np.concatenate((p, a, p))
+        s = b.strides[0]
+        return np.lib.stride_tricks.as_strided(
+            b[N - 1:],
+            shape=(N, len(a) + N - 1),
+            strides=(-s, s),
+        )
+
     full_corr_mat = _sliding_windows(k, N)
     overhang = full_corr_mat.shape[-1] - N
     if overhang % 2 == 1:
@@ -530,35 +308,15 @@ def matrix_cusplet(
     """
     if k_args is None:
         k_args = []
-
-    arr = np.array(arr)
-    cc = np.zeros((len(widths), len(arr)))
-
-    # we need to fill all nans
-    # best choice for this is linear interpolation
-
-    nans = np.isnan(arr)
-    nonzero_fn = lambda x: x.nonzero()[0]
-
-    arr[nans] = np.interp(nonzero_fn(nans),
-                          nonzero_fn(~nans),
-                          arr[~nans])
-
-    # allow for weighting of width importance
     if width_weights is None:
         width_weights = np.ones_like(widths)
 
-    # now we will see what group action to operate with
+    arr = utils.fill_na(np.array(arr))
+    cc = np.zeros((len(widths), len(arr)))
+
     for i, w in enumerate(widths):
         k = kernel(w, *k_args)
-        # implement reflections
-        reflection = reflection % 4
-        if reflection == 1:
-            k = k[::-1]
-        elif reflection == 2:
-            k = -k
-        elif reflection == 3:
-            k = -k[::-1]
+        k = utils.apply_reflection_action(k, reflection)
 
         # now set up the cross correlation
         corr_mat = setup_corr_mat(k, arr.shape[0])

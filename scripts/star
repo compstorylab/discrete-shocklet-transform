@@ -1,37 +1,32 @@
 #!/usr/bin/env python
 
-import warnings
 
-warnings.simplefilter(action='ignore', category=FutureWarning)
-import sys
-import os
 import argparse
 import multiprocessing
 import pathlib
 
 import numpy as np
 
-from discrete_shocklets import shocklets
+import discrete_shocklets.utils
+from discrete_shocklets import shocklets, kernel_functions, weighting_functions
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description='Runs the Shocklet Transform And Ranking (STAR) algorithm on data',
-        formatter_class=argparse.RawTextHelpFormatter
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         '-i',
         '--input',
-        type=str,
-        help='''Path to files on which to run the algorithm.
-            The files should be in row-major order. That is,
-            they should be a N_variable x T matrix, where T is
-            the number of timesteps. This algorithm multiprocesses over
-            files so if your time series are very long it could be significantly
-            faster to break them up into multiple files, one time series per file.
-            (This is true only if you have many cores on which processing can occur
-            in parallel.)''',
-        default='.'
+        type=validate_input_dir,
+        help='Path to files on which to run the algorithm. '
+             'The files should be in row-major order. '
+             'That is, they should be a N_variable x T matrix, where T is the number of time steps. '
+             'This algorithm multi-processes over files so if your time series are very long it could '
+             'be significantly faster to break them up into multiple files, one time series per file. '
+             '(This is true only if you have many cores on which processing can occur in parallel.)',
+        default=pathlib.Path(),
     )
     parser.add_argument(
         '-e',
@@ -45,118 +40,129 @@ def parse_args():
         '--delimiter',
         type=str,
         help='Delimiter of entries in files',
-        default='none'
+        default=',',
     )
     parser.add_argument(
         '-o',
         '--output',
-        type=str,
+        type=validate_output_dir,
         help='Path to which to save output',
-        default='./out'
+        default=pathlib.Path('../out'),
     )
     parser.add_argument(
         '-k',
         '--kernel',
-        type=str,
-        help='''Kernel function to use. Must be in dir(shocklets). Pre-written options (no
-            need to write code) are: haar, which is the Haar wavelet and looks for pure level
-            changes; power_zero_cusp, which is the building block for other cusp kernels and
-            looks for power (monomial) growth followed by an abrupt drop to constant low levels;
-            power_cusp, which is a power cusp shape; exp_zero_cusp, which is like
-            power_zero_cusp except with exponential growth; and exp_cusp, which is like
-            power_cusp except with exponential growth. Combining these kernels with a reflection
-            (computed using the option `-r <int>`) is probably enough to look for any interesting
-            behavior. If you want to write your own kernel function, it must be in discrete_shocklets.py and
-            conform to the API `function(W, *args, zn=True)` where W is a window size,
-            *args are any remaining positional arguments to the function as parameters and must
-            be cast-able to `float`, and zn is a boolean corresponding to whether or not to
-            ensure that the kernel function integrates to zero, which it should by default.
-            Kernel defaults to power_cusp.''',
-        default='power_cusp'
+        type=lambda x: getattr(kernel_functions, x),
+        help='Kernel function used by STAR to identify interesting regimes. '
+             'Most common options are: '
+             'haar, the Haar wavelet, which looks for pure level changes; '
+             'power_zero_cusp, which is the building block for other cusp kernels and looks for power '
+             '(monomial) growth followed by an abrupt drop to constant low levels; '
+             'power_cusp, which is a power cusp shape; '
+             'exp_zero_cusp, which is like power_zero_cusp except with exponential growth; '
+             'and exp_cusp, which is like power_cusp except with exponential growth. '
+             'Combining these kernels with a reflection (see the -r option) '
+             'is probably enough to look for most interesting behavior. '
+             'See kernel_functions.py for additional options and details.',
+        default=kernel_functions.power_cusp,
+        choices={k.__name__ for k in kernel_functions.registered_kernel_functions}
     )
     parser.add_argument(
         '-r',
         '--reflection',
-        type=int,
-        help='Element of the reflection group R_4 to use. Default is 0 (id). Computed mod 4.',
-        default=0
+        type=lambda x: int(x) % 4,
+        help='Element of the reflection group R_4 to use. Computed mod 4.',
+        default=0,
     )
     parser.add_argument(
         '-b',
         '--bvalue',
         type=float,
-        help='Multiplier for std dev in classification. Default is b=0.75.',
-        default=0.75
+        help='Multiplier for std dev in classification.',
+        default=0.75,
     )
     parser.add_argument(
         '-g',
         '--geval',
         type=float,
-        help='Threshold for window construction. Default is 0.5.',
-        default=0.5
+        help='Threshold for window construction.',
+        default=0.5,
     )
     parser.add_argument(
         '-l',
         '--lookback',
         type=int,
-        help='Number of indices to look back for window construction. Default is 0.',
-        default=0
+        help='Number of indices to look back for window construction.',
+        default=0,
     )
     parser.add_argument(
         '-w',
         '--weighting',
-        type=str,
-        help='''Method for weighting of cusp indicator functions. Must be in dir(shocklets).
-            Defaults to max_change, the maximum minus the minimum value of original series
-            within each window. The other pre-written option (no need to write code) is
-            max_rel_change, which computes max_change on the array of log returns of the
-            original time series. If you want to write your own weighting function, it must
-            be in discrete_shocklets.py and correspond to the API `function(arr)` where arr is an array.''',
-        default='max_change'
+        type=lambda x: getattr(weighting_functions, x),
+        help='Method for weighting of cusp indicator functions. '
+             'max_change uses the dynamic range of the original series within each window. '
+             'max_rel_change computes max_change on the array of log returns of the original time series.',
+        default=weighting_functions.max_change,
+        choices={x.__name__ for x in weighting_functions.registered_weighting_functions},
     )
     parser.add_argument(
         '-wmin',
         '--wmin',
         type=int,
-        help='Smallest kernel size. Defaults to 10.',
-        default=10
+        help='Smallest kernel size.',
+        default=10,
     )
     parser.add_argument(
         '-wmax',
         '--wmax',
         type=int,
         help='Largest kernel size. Defaults to min{500, 1/2 length of time series}.',
-        default=500
+        default=None,
     )
     parser.add_argument(
         '-nw',
         '--nw',
         type=int,
-        help='Number of kernels to use. Ideally (wmax - wmin) / nw would be an integer. '
-             'Default is 100.',
-        default=100
+        help='Number of kernels to use. Ideally (wmax - wmin) / nw would be an integer.',
+        default=100,
     )
     parser.add_argument(
         '-s',
         '--savespec',
-        type=str,
-        help='''Spec for saving. Options are: cc, to just save cusplet transform;
-            indic, to save indicator function; windows, to save anomalous windows;
-            weighted, to save weighted indicator function;
-            all, to save everything. Defaults to all. Files are saved in compressed
-            .npz numpy archive format.''',
-        default='all'
+        type=lambda x: x.strip().lower(),
+        help='Spec for saving. Options are: '
+             'cc, to save cusplet transform; '
+             'indic, to save indicator function;'
+             'windows, to save anomalous windows; '
+             'weighted, to save weighted indicator function; '
+             'all, to save everything. '
+             'Files are saved in the numpy compressed archive format (.npz files).',
+        default='all',
+        choices={'cc', 'indic', 'windows', 'weighted', 'all'},
     )
     parser.add_argument(
         '-norm',
         '--norm',
-        type=bool,
-        help='''Whether or not to normalize series to be wide-sense stationary
-            with intertemporal zero mean and unit variance. Default is False.''',
-        default=False
+        type=lambda x: x.lower() in {'t', 'true', '1'},
+        help='Whether or not to normalize series to be wide-sense stationary '
+             'with inter-temporal zero mean and unit variance.',
+        default=False,
     )
 
     return parser.parse_known_args()
+
+
+def validate_input_dir(path):
+    input_dir = pathlib.Path(path)
+    if not input_dir.is_dir():
+        FileNotFoundError(f'{path} does not exist or is not a directory')
+    return input_dir
+
+
+def validate_output_dir(path):
+    output_dir = pathlib.Path(path)
+    output_dir.mkdir(exist_ok=True, parents=True)
+    return output_dir
 
 
 def _process(
@@ -178,31 +184,33 @@ def _process(
 ):
     """Computes the shocklet (cusplet) transform on time series data.
 
-    Computes the transform on each row of the passed data. The collection of cusplet transforms will be of shape (data.shape[0], nw, data.shape[1]).
+    Computes the transform on each row of the passed data.
+    The collection of cusplet transforms will be of shape (data.shape[0], nw, data.shape[1]).
     """
-    kernel = getattr(shocklets, kernel)
-    weighting = getattr(shocklets, weighting)
+    if len(data.shape) < 2:
+        data = data.reshape(1, data.shape[0])
+
+    if wmax is None:
+        nt = data.shape[1]
+        wmax = min(500, int(0.5 * nt))
+
     widths = np.linspace(wmin, wmax, nw).astype(int)
 
     for i, row in enumerate(data):
         if norm:
-            row = shocklets.normalize(row)
+            row = discrete_shocklets.utils.normalize(row)
         try:
-            cc, _ = shocklets.cusplet(
-                row,
-                kernel,
-                widths,
-                k_args=kernel_args,
-                reflection=reflection
-            )
+            cc, _ = shocklets.cusplet(row, kernel, widths, kernel_args=kernel_args, reflection=reflection)
         except Exception as e:
             print(f'Error occurred in computation of shocklet transform of {orig_fname}')
             print(f'Error: {e}')
             return
 
         if savespec == 'cc':
-            np.savez_compressed(outdir + f'{orig_fname}-row{i}',
-                                cc=cc)
+            np.savez_compressed(
+                outdir + f'{orig_fname}-row{i}',
+                cc=cc,
+            )
         else:
             extrema, sum_cc, gearray = shocklets.classify_cusps(
                 cc,
@@ -210,16 +218,20 @@ def _process(
                 geval=geval
             )
             if savespec == 'indic':
-                np.savez_compressed(outdir + f'{orig_fname}-row{i}',
-                                    indic=sum_cc)
+                np.savez_compressed(
+                    outdir + f'{orig_fname}-row{i}',
+                    indic=sum_cc,
+                )
             elif savespec in ['windows', 'weighted', 'all']:
                 windows = shocklets.make_components(
                     gearray,
                     scan_back=nback
                 )
                 if savespec == 'windows':
-                    np.savez_compressed(outdir + f'{orig_fname}-row{i}',
-                                        windows=windows)
+                    np.savez_compressed(
+                        outdir + f'{orig_fname}-row{i}',
+                        windows=windows,
+                    )
 
                 else:
                     weighted_sumcc = np.copy(sum_cc)
@@ -228,14 +240,18 @@ def _process(
                         weighted_sumcc[window] *= weighting(row[window])
 
                     if savespec == 'weighted':
-                        np.savez_compressed(outdir + f'{orig_fname}-row{i}',
-                                            weighted_indic=weighted_sumcc)
+                        np.savez_compressed(
+                            outdir + f'{orig_fname}-row{i}',
+                            weighted_indic=weighted_sumcc,
+                        )
                     else:
-                        np.savez_compressed(outdir + '/' + f'{orig_fname}-row{i}',
-                                            cc=cc,
-                                            indic=sum_cc,
-                                            windows=windows,
-                                            weighted_indic=weighted_sumcc)
+                        np.savez_compressed(
+                            outdir + '/' + f'{orig_fname}-row{i}',
+                            cc=cc,
+                            indic=sum_cc,
+                            windows=windows,
+                            weighted_indic=weighted_sumcc,
+                        )
 
 
 def _mp_process(fname, args, kernel_args):
@@ -243,38 +259,22 @@ def _mp_process(fname, args, kernel_args):
         data = np.genfromtxt(fname)
     else:
         data = np.genfromtxt(fname, delimiter=args.delimiter)
-    if len(data.shape) < 2:
-        data = data.reshape(1, data.shape[0])
-    # fix up the window size if we need to
-    # first check to see if they are compatible
-    if args.wmin >= args.wmax:
-        print(f'wmin must be less than wmax for sensible output.')
-        return
-    nt = data.shape[1]
-    wmax = min(args.nw, int(0.5 * nt))
-
-    # ensure we have a valid savespec
-    if args.savespec not in ['cc', 'windows', 'indic', 'all']:
-        print(f'{args.savespec} not one of cc, windows, indic, or all. Defaulting to all.')
-        savespec = 'all'
-    else:
-        savespec = args.savespec
 
     _process(
         data,
         args.kernel,
         args.reflection,
         args.wmin,
-        wmax,
+        args.wmax,
         args.nw,
         kernel_args,
         args.output,
         args.weighting,
-        savespec,
+        args.savespec,
         args.bvalue,
         args.geval,
         args.lookback,
-        fname.split('/')[-1].split('.')[0],
+        fname.stem,
         args.norm
     )
 
@@ -282,71 +282,35 @@ def _mp_process(fname, args, kernel_args):
 def main():
     args, kernel_args = parse_args()
 
-    # Look for all files that match the requested
-    if not os.path.isdir(args.input):
-        print(f'{args.input} does not exist or is not a directory')
-        sys.exit(1)
-    else:
-        fnames = [args.input + '/' + f for f in os.listdir(args.input) if f.endswith(args.ending)]
+    try:
+        kernel_args_ = []
+        for i, arg in enumerate(kernel_args):
+            kernel_args_.append(float(arg))
+        kernel_args = kernel_args_
+    except ValueError:
+        ValueError(f'Kernel argument {i} = {arg} can not be safely cast to float.')
 
-    pathlib.Path(args.output).mkdir(
-        exist_ok=True,
-        parents=True
-    )
+    if args.savespec not in ['cc', 'windows', 'indic', 'all']:
+        print(f'{args.savespec} not one of cc, windows, indic, or all. Defaulting to all.')
+        args.savespec = 'all'
 
+    if args.wmin >= args.wmax:
+        ValueError(f'wmin ({args.wmin}) must be less than wmax ({args.wmax}).')
+
+    fnames = sorted(args.input.glob(f'*.{args.ending}'))
     if len(fnames) == 0:
-        print(f'There are no files with ending {args.ending} in {args.input}')
-        sys.exit(1)
+        FileNotFoundError(f'There are no files with ending {args.ending} in {args.input}')
 
-    elif len(fnames) >= 1:
-        try:
-            kernel_args = [float(x) for x in kernel_args]
-        except Exception as e:
-            print(f'When attempting to process kernel arguments error encountered:')
-            print(f'{e}')
-            sys.exit(1)
+    elif len(fnames) == 1:
+        _mp_process(
+            fnames[0],
+            args,
+            kernel_args,
+        )
 
-        if len(fnames) == 1:
-            data = np.genfromtxt(fnames[0], delimiter=args.delimiter)
-            if len(data.shape) < 2:
-                data = data.reshape(1, data.shape[0])
-
-            # fix up the window size if we need to
-            # first check to see if they are compatible
-            if args.wmin >= args.wmax:
-                print(f'wmin must be less than wmax for sensible output.')
-                sys.exit(1)
-            nt = data.shape[1]
-            wmax = min(args.nw, int(0.5 * nt))
-
-            # ensure we have a valid savespec
-            if args.savespec not in ['cc', 'windows', 'indic', 'all']:
-                print(f'{args.savespec} not one of cc, windows, indic, or all. Defaulting to all.')
-                savespec = 'all'
-            else:
-                savespec = args.savespec
-
-            _process(
-                data,
-                args.kernel,
-                args.reflection,
-                args.wmin,
-                wmax,
-                args.nw,
-                kernel_args,
-                args.output,
-                args.weighting,
-                savespec,
-                args.bvalue,
-                args.geval,
-                args.lookback,
-                fnames[0].split('/')[-1].split('.')[0],
-                args.norm
-            )
-
-        else:  # multiprocess over files
-            pool = multiprocessing.Pool(None)
-            errors = pool.starmap(
+    elif len(fnames) > 1:
+        with multiprocessing.Pool(None) as pool:
+            pool.starmap(
                 _mp_process,
                 zip(
                     fnames,
@@ -354,7 +318,6 @@ def main():
                     (kernel_args for _ in range(len(fnames)))
                 )
             )
-            sys.exit()
 
 
 if __name__ == "__main__":
