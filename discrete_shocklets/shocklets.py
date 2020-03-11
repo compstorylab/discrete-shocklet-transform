@@ -165,7 +165,6 @@ def _make_components(indicator, cusp_points=None):
         return windows
 
     pt_holder = [[] for _ in range(len(windows))]
-
     for pt in cusp_points:
         for i, window in enumerate(windows):
             if (pt >= window[0]) and (pt <= window[-1]):
@@ -174,9 +173,8 @@ def _make_components(indicator, cusp_points=None):
 
     windows_ = []
     estimated_cusp_points = []
-
     for holder, window in zip(pt_holder, windows):
-        if holder != []:
+        if holder:
             windows_.append(window)
             estimated_cusp_points.append(int(np.median(holder)))
 
@@ -282,9 +280,9 @@ def setup_corr_mat(k, N):
 
 def matrix_cusplet(
         arr,
-        kernel,
         widths,
-        k_args=None,
+        kernel_func=kernel_functions.power_cusp,
+        kernel_args=None,
         reflection=0,
         width_weights=None,
 ):
@@ -296,9 +294,9 @@ def matrix_cusplet(
 
     Args:
       arr(list, tuple, or numpy.ndarray): array of shape (n,) or (n,1). This array should not contain inf-like values. The transform will still be computed but infs propagate. Nan-like values will be linearly interpolated, which is okay for subsequent time-based analysis but will introduce ringing in frequency-based analyses.
-      kernel(callable): kernel function. Must take an integer L > 0 as an argument and any number of additional, nonkeyword arguments, and returns a numpy array of shape (L,) that implements the kernel. The returned array should sum to zero; use the zero_norm function for this.
       widths(iterable): iterable of integers that specify the window widths (L above). Assumed to be in increasing order; if widths is not in increasing order the results will be garbage.
-      k_args(list or tuple, optional): arguments for the kernel function. (Default value = None)
+      kernel_func(callable): kernel function. Must take an integer L > 0 as an argument and any number of additional, nonkeyword arguments, and returns a numpy array of shape (L,) that implements the kernel. The returned array should sum to zero; use the zero_norm function for this.
+      kernel_args(list or tuple, optional): arguments for the kernel function. (Default value = None)
       reflection(int, optional): integer n evaluates to n %4, element of the reflection group that left-multiplies the kernel function. Default is 0 (identity element).
       width_weights: type width_weights: (Default value = None)
 
@@ -306,23 +304,25 @@ def matrix_cusplet(
       tuple -- (numpy array of shape (L, n) -- the cusplet transform, None)
 
     """
-    if k_args is None:
-        k_args = []
+    if kernel_args is None:
+        kernel_args = []
     if width_weights is None:
         width_weights = np.ones_like(widths)
+    else:
+        width_weights = np.array(width_weights)
 
     arr = utils.fill_na(np.array(arr))
     cc = np.zeros((len(widths), len(arr)))
 
-    for i, w in enumerate(widths):
-        k = kernel(w, *k_args)
-        k = utils.apply_reflection_action(k, reflection)
+    for i, width in enumerate(widths):
+        kernel = kernel_func(width, *kernel_args)
+        kernel = utils.apply_reflection_action(kernel, reflection)
 
-        # now set up the cross correlation
-        corr_mat = setup_corr_mat(k, arr.shape[0])
+        # Set up the cross correlation
+        corr_mat = setup_corr_mat(kernel, arr.shape[0])
         cc[i] = np.dot(corr_mat, arr)
-
-    return cc, None
+    cc = width_weights[..., np.newaxis] * cc
+    return cc, kernel
 
 
 def inverse_cusplet(
