@@ -39,6 +39,8 @@ def cusplet(
     """
     if kernel_args is None:
         kernel_args = []
+    elif type(kernel_args) is float:
+        kernel_args = [kernel_args]
     if width_weights is None:
         width_weights = np.ones_like(widths)
     else:
