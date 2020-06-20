@@ -43,6 +43,19 @@ the gotchas discussed below.
 
 ## Citing this repo
 If you use this code as a part of academic research then please cite one or both of the associated papers listed above.
+Here is the `bib` entry associated with the published paper.
+```
+@article{dewhurst2020shocklet,
+  title={The shocklet transform: a decomposition method for the identification of local, mechanism-driven dynamics in sociotechnical time series},
+  author={Dewhurst, David Rushing and Alshaabi, Thayer and Kiley, Dilan and Arnold, Michael V and Minot, Joshua R and Danforth, Christopher M and Dodds, Peter Sheridan},
+  journal={EPJ Data Science},
+  volume={9},
+  number={1},
+  pages={3},
+  year={2020},
+  publisher={Springer Berlin Heidelberg}
+}
+```
 
 ## `star` gotchas
 Additional arguments passed to `star` following the named arguments are considered to be kernel function arguments.
